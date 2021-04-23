@@ -1,12 +1,15 @@
 package com.lambdaschool.bookstore.services;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lambdaschool.bookstore.BookstoreApplicationTest;
 import com.lambdaschool.bookstore.exceptions.ResourceNotFoundException;
 import com.lambdaschool.bookstore.models.Author;
 import com.lambdaschool.bookstore.models.Book;
 import com.lambdaschool.bookstore.models.Section;
 import com.lambdaschool.bookstore.models.Wrote;
+import com.lambdaschool.bookstore.repository.AuthorRepository;
 import com.lambdaschool.bookstore.repository.BookRepository;
+import com.lambdaschool.bookstore.repository.SectionRepository;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -20,8 +23,11 @@ import org.springframework.test.context.junit4.SpringRunner;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static junit.framework.TestCase.assertEquals;
+import static junit.framework.TestCase.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest(classes = BookstoreApplicationTest.class)
@@ -33,6 +39,13 @@ public class BookServiceImplUnitTestNoDB
 
     @MockBean
     private BookRepository bookrepos;
+
+//    If I uncomment this everything will break. Why???
+//    @MockBean
+//    private AuthorRepository authorRepository;
+
+    @MockBean
+    private SectionRepository sectionRepository;
 
     List<Book> myBookList = new ArrayList<>();
 
@@ -115,35 +128,91 @@ public class BookServiceImplUnitTestNoDB
     @Test
     public void findAll()
     {
+        Mockito.when(bookrepos.findAll())
+                .thenReturn(myBookList);
+        assertEquals(5, bookService.findAll().size());
     }
 
     @Test
     public void findBookById()
     {
+        Mockito.when(bookrepos.findById(1L))
+                .thenReturn(Optional.of(myBookList.get(0)));
+        assertEquals("Flatterland", bookService.findBookById(1).getTitle());
     }
 
     @Test(expected = ResourceNotFoundException.class)
     public void notFindBookById()
     {
+        Mockito.when(bookrepos.findById(1000L))
+                .thenReturn(Optional.empty());
+        bookService.findBookById(1000);
     }
 
     @Test
     public void delete()
     {
+        Mockito.when(bookrepos.findById(1L))
+                .thenReturn(Optional.of(myBookList.get(0)));
+        Mockito.doNothing()
+                .when(bookrepos).deleteById(1L);
+        bookService.delete(1L);
+        assertEquals(5, myBookList.size());
     }
 
     @Test
     public void save()
     {
+        // I don't know why but making a mock bean for the authors repository breaks everything so I'm unable to test that part
+        Section s1 = new Section("Fiction");
+        s1.setSectionid(1);
+        Author tazmuir = new Author("Tamsyn", "Muir");
+        tazmuir.setAuthorid(100L);
+        Book newBook = new Book("Harrow the Ninth", "9781250313225", 5, s1);
+        newBook.setBookid(0);
+        //newBook.getWrotes().add(new Wrote(tazmuir, newBook));
+
+        Mockito.when(sectionRepository.findById(1L))
+                .thenReturn(Optional.of(s1));
+
+//        Mockito.when(authorRepository.findById(100L))
+//                .thenReturn(Optional.of(tazmuir));
+
+        assertEquals(0, newBook.getWrotes().size());
+        Mockito.when(bookrepos.save(any(Book.class)))
+            .thenReturn(newBook);
+
+        Book addBook = bookrepos.save(newBook);
+        assertNotNull(addBook);
+        assertEquals(addBook.getTitle(), newBook.getTitle());
     }
 
     @Test
-    public void update()
+    public void update() throws Exception
     {
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        Section s1 = new Section("Fiction");
+        s1.setSectionid(1);
+        Book originalBook = new Book("Harrow the Ninth", "9781250313225", 5, s1);
+        originalBook.setBookid(100L);
+        Book book = objectMapper.readValue(objectMapper.writeValueAsString(originalBook), Book.class);
+        book.setTitle("Harrow the First");
+
+        Mockito.when(bookrepos.findById(100L)).thenReturn(Optional.of(originalBook));
+        Mockito.when(sectionRepository.findById(1L)).thenReturn(Optional.of(s1));
+        Mockito.when(bookrepos.save(any(Book.class))).thenReturn(book);
+
+        Book updatedBook = bookService.update(book, book.getBookid());
+        assertEquals("Harrow the First", updatedBook.getTitle());
+        assertEquals(100, updatedBook.getBookid());
     }
 
     @Test
     public void deleteAll()
     {
+        Mockito.doNothing().when(bookrepos).deleteAll();
+        bookService.deleteAll();
+        assertEquals(5, myBookList.size());
     }
 }
